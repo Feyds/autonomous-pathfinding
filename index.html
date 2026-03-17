@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Pathfinding (A* Algorithm)</title>
+    <style>
+        body {
+            background-color: #0A1128;
+            color: #E2E8F0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 { color: #ffffff; margin-bottom: 5px; }
+        h1 span { color: #3B82F6; }
+        p { color: #94A3B8; margin-bottom: 20px; text-align: center; max-width: 600px; }
+        
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: transparent;
+            color: #3B82F6;
+            border: 2px solid #3B82F6;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            background-color: #3B82F6;
+            color: #0A1128;
+        }
+        button.btn-danger {
+            color: #EF4444;
+            border-color: #EF4444;
+        }
+        button.btn-danger:hover {
+            background-color: #EF4444;
+            color: #ffffff;
+        }
+
+        #grid-container {
+            display: grid;
+            gap: 1px;
+            background-color: #1E293B;
+            border: 2px solid #3B82F6;
+            padding: 1px;
+        }
+
+        .cell {
+            width: 25px;
+            height: 25px;
+            background-color: #0d1530;
+            transition: background-color 0.2s ease;
+        }
+
+        .cell:hover { background-color: #1E293B; cursor: pointer; }
+        .cell.wall { background-color: #475569; animation: pop 0.2s ease-out; }
+        .cell.start { background-color: #10B981; }
+        .cell.end { background-color: #EF4444; }
+        .cell.open { background-color: rgba(59, 130, 246, 0.4); }
+        .cell.closed { background-color: rgba(59, 130, 246, 0.1); }
+        .cell.path { background-color: #F59E0B; animation: pop 0.2s ease-out; }
+
+        @keyframes pop {
+            0% { transform: scale(0.8); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Autonomous <span>Pathfinding</span></h1>
+    <p>Find the shortest path to the target using the A* (A-Star) Algorithm. Click and drag to draw obstacles (walls), then start the algorithm.</p>
+
+    <div class="controls">
+        <button onclick="startAlgorithm()">Start Algorithm</button>
+        <button class="btn-danger" onclick="clearWalls()">Clear Walls</button>
+        <button class="btn-danger" onclick="resetGrid()">Reset Grid</button>
+    </div>
+
+    <div id="grid-container"></div>
+
+<script>
+    const cols = 30;
+    const rows = 20;
+    const gridContainer = document.getElementById('grid-container');
+    gridContainer.style.gridTemplateColumns = `repeat(${cols}, 25px)`;
+
+    let grid = [];
+    let startNode, endNode;
+    let isDrawing = false;
+    let isRunning = false;
+
+    class Node {
+        constructor(x, y) {
+            this.x = x;
+            this.y = y;
+            this.isWall = false;
+            this.g = 0;
+            this.h = 0;
+            this.f = 0;
+            this.neighbors = [];
+            this.previous = undefined;
+
+            this.element = document.createElement('div');
+            this.element.classList.add('cell');
+
+            this.element.addEventListener('mousedown', () => {
+                if(isRunning) return;
+                isDrawing = true;
+                this.toggleWall();
+            });
+            this.element.addEventListener('mouseenter', () => {
+                if (isDrawing && !isRunning) this.toggleWall();
+            });
+            this.element.addEventListener('mouseup', () => isDrawing = false);
+
+            gridContainer.appendChild(this.element);
+        }
+
+        toggleWall() {
+            if (this !== startNode && this !== endNode) {
+                this.isWall = !this.isWall;
+                if (this.isWall) this.element.classList.add('wall');
+                else this.element.classList.remove('wall');
+            }
+        }
+
+        addNeighbors(grid) {
+            let x = this.x;
+            let y = this.y;
+            if (x < cols - 1) this.neighbors.push(grid[x + 1][y]);
+            if (x > 0) this.neighbors.push(grid[x - 1][y]);
+            if (y < rows - 1) this.neighbors.push(grid[x][y + 1]);
+            if (y > 0) this.neighbors.push(grid[x][y - 1]);
+        }
+    }
+
+    function initGrid() {
+        gridContainer.innerHTML = '';
+        
+        grid = new Array(cols);
+        for (let i = 0; i < cols; i++) {
+            grid[i] = new Array(rows);
+        }
+
+        for (let j = 0; j < rows; j++) {
+            for (let i = 0; i < cols; i++) {
+                grid[i][j] = new Node(i, j);
+            }
+        }
+
+        for (let i = 0; i < cols; i++) {
+            for (let j = 0; j < rows; j++) {
+                grid[i][j].addNeighbors(grid);
+            }
+        }
+
+        startNode = grid[2][Math.floor(rows / 2)];
+        endNode = grid[cols - 3][Math.floor(rows / 2)];
+        
+        startNode.element.classList.add('start');
+        endNode.element.classList.add('end');
+    }
+
+    function heuristic(a, b) {
+        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+    }
+
+    function clearVisuals() {
+        for (let i = 0; i < cols; i++) {
+            for (let j = 0; j < rows; j++) {
+                grid[i][j].element.classList.remove('open', 'closed', 'path');
+                grid[i][j].g = 0; grid[i][j].h = 0; grid[i][j].f = 0;
+                grid[i][j].previous = undefined;
+            }
+        }
+    }
+
+    function clearWalls() {
+        if(isRunning) return;
+        for (let i = 0; i < cols; i++) {
+            for (let j = 0; j < rows; j++) {
+                grid[i][j].isWall = false;
+                grid[i][j].element.classList.remove('wall');
+            }
+        }
+        clearVisuals();
+    }
+
+    function resetGrid() {
+        if(isRunning) return;
+        initGrid();
+    }
+
+    document.addEventListener('mouseup', () => isDrawing = false);
+
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    async function startAlgorithm() {
+        if(isRunning) return;
+        clearVisuals();
+        isRunning = true;
+
+        let openSet = [];
+        let closedSet = [];
+        openSet.push(startNode);
+
+        while (openSet.length > 0) {
+            let lowestIndex = 0;
+            for (let i = 0; i < openSet.length; i++) {
+                if (openSet[i].f < openSet[lowestIndex].f) {
+                    lowestIndex = i;
+                }
+            }
+
+            let current = openSet[lowestIndex];
+
+            if (current === endNode) {
+                let temp = current;
+                let path = [];
+                path.push(temp);
+                while (temp.previous) {
+                    path.push(temp.previous);
+                    temp = temp.previous;
+                }
+
+                for (let i = path.length - 1; i >= 0; i--) {
+                    if(path[i] !== startNode && path[i] !== endNode) {
+                        path[i].element.classList.add('path');
+                        await sleep(20); 
+                    }
+                }
+                isRunning = false;
+                console.log("Target Reached!");
+                return;
+            }
+
+            openSet.splice(lowestIndex, 1);
+            closedSet.push(current);
+            if(current !== startNode && current !== endNode) {
+                current.element.classList.add('closed');
+            }
+
+            let neighbors = current.neighbors;
+            for (let i = 0; i < neighbors.length; i++) {
+                let neighbor = neighbors[i];
+
+                if (!closedSet.includes(neighbor) && !neighbor.isWall) {
+                    let tempG = current.g + 1;
+
+                    let newPath = false;
+                    if (openSet.includes(neighbor)) {
+                        if (tempG < neighbor.g) {
+                            neighbor.g = tempG;
+                            newPath = true;
+                        }
+                    } else {
+                        neighbor.g = tempG;
+                        newPath = true;
+                        openSet.push(neighbor);
+                        if(neighbor !== startNode && neighbor !== endNode) {
+                            neighbor.element.classList.add('open');
+                        }
+                    }
+
+                    if (newPath) {
+                        neighbor.h = heuristic(neighbor, endNode);
+                        neighbor.f = neighbor.g + neighbor.h;
+                        neighbor.previous = current;
+                    }
+                }
+            }
+            await sleep(10);
+        }
+
+        alert("No path found! (Walls are blocking the way)");
+        isRunning = false;
+    }
+
+    initGrid();
+</script>
+
+</body>
+</html>
